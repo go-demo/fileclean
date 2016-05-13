@@ -22,13 +22,14 @@ USAGE:
    fileclean [global options] command [command options] [arguments...]
 
 VERSION:
-   0.1.0
+   0.1.1
 
 COMMANDS:
    help, h      Shows a list of commands or help for one command
 
 GLOBAL OPTIONS:
    --dir, -d "."                        文件目录
+   --file, -f                           从指定的文件中读取要移除的文件列表
    --recur, -r                          递归处理
    --name [--name option --name option] 文件名
    --reg [--reg option --reg option]    正则过滤的文件名

@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -23,13 +26,17 @@ func main() {
 	StartTime = time.Now()
 	app := cli.NewApp()
 	app.Name = "fileclean"
-	app.Version = "0.1.0"
+	app.Version = "0.1.1"
 	app.Usage = "文件清理程序"
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
 			Name:  "dir, d",
 			Value: ".",
 			Usage: "文件目录",
+		},
+		cli.StringFlag{
+			Name:  "file, f",
+			Usage: "从指定的文件中读取要移除的文件列表",
 		},
 		cli.BoolFlag{
 			Name:  "recur, r",
@@ -53,12 +60,13 @@ func main() {
 		},
 	}
 	app.Action = handleAction
-	app.Run(os.Args)
+	_ = app.Run(os.Args)
 }
 
 // Config 配置参数
 type Config struct {
 	Dir     string
+	File    string
 	Name    []string
 	Reg     []string
 	Recur   bool
@@ -76,13 +84,21 @@ func handleAction(ctx *cli.Context) {
 	}()
 	config := Config{
 		Dir:     ctx.String("dir"),
+		File:    ctx.String("file"),
 		Name:    ctx.StringSlice("name"),
 		Reg:     ctx.StringSlice("reg"),
 		Recur:   ctx.Bool("recur"),
 		Exclude: ctx.Bool("exclude"),
 		All:     ctx.Bool("all"),
 	}
-	if !config.All && (len(config.Name) == 0 && len(config.Reg) == 0) {
+	if v := config.File; v != "" {
+		names, err := readFileList(v)
+		if err != nil {
+			panic(err)
+		}
+		config.Name = names
+	}
+	if !config.All && len(config.Name) == 0 && len(config.Reg) == 0 {
 		panic("未知的文件名！")
 	}
 	stat, err := os.Lstat(config.Dir)
@@ -97,7 +113,31 @@ func handleAction(ctx *cli.Context) {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("\r [清理完成] 耗时：%dms,清理文件数：%d \t", time.Duration(time.Now().Sub(StartTime).Nanoseconds())/time.Millisecond, CleanCount)
+	fmt.Printf("\r [清理完成] 耗时：%dms,清理文件数：%d \t", time.Duration(time.Since(StartTime).Nanoseconds())/time.Millisecond, CleanCount)
+}
+
+// readFileList 读取文件名列表
+func readFileList(name string) (names []string, err error) {
+	file, err := os.Open(name)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	buf := new(bytes.Buffer)
+	_, _ = io.Copy(buf, file)
+	buf.WriteByte('\n')
+	for {
+		line, err := buf.ReadString('\n')
+		if err != nil {
+			break
+		}
+		line = strings.TrimSuffix(line, "\n")
+		if line == "" {
+			continue
+		}
+		names = append(names, line)
+	}
+	return
 }
 
 // handleRecursive 递归处理文件
@@ -113,7 +153,7 @@ func handleRecursive(root string, config *Config) error {
 			panic(err)
 		}
 		if !exist {
-			os.Remove(root)
+			_ = os.Remove(root)
 		}
 	}()
 	files, err := file.Readdir(0)
@@ -186,6 +226,6 @@ func handleRemove(root string, info os.FileInfo) error {
 		return err
 	}
 	atomic.AddInt64(&CleanCount, 1)
-	fmt.Printf("\r [...] 用时：%dms,清理文件数：%d \t", time.Duration(time.Now().Sub(StartTime).Nanoseconds())/time.Millisecond, CleanCount)
+	fmt.Printf("\r [...] 用时：%dms,清理文件数：%d \t", time.Duration(time.Since(StartTime).Nanoseconds())/time.Millisecond, CleanCount)
 	return nil
 }
